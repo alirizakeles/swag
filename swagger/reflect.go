@@ -442,7 +442,7 @@ func inspect(t reflect.Type, tag reflect.StructTag) Property {
 			if enumTag != "" {
 				splits := strings.Split(enumTag, ",")
 				for _, eVal := range splits {
-					p.Items.Enum = append(p.Enum, strings.TrimSpace(eVal))
+					p.Items.Enum = append(p.Items.Enum, strings.TrimSpace(eVal))
 				}
 			}
 
