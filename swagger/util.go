@@ -38,8 +38,7 @@ func makeName(t reflectType) string {
 	name := t.Name()
 	if name != "" && t.PkgPath() != "" && UsePackageName {
 		name = filepath.Base(t.PkgPath()) + name
-	} else if name != "" {
-	} else {
+	} else if name == "" {
 		name = t.String()
 		name = strings.ReplaceAll(name, "[]", "arr_")
 		name = strings.ReplaceAll(name, "*", "ptr_")
