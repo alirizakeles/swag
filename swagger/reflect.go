@@ -485,6 +485,8 @@ func defineObject(v interface{}) Object {
 		t = reflect.TypeOf(v)
 	}
 
+	objectName := makeName(t)
+
 	properties := map[string]Property{}
 	isArray := t.Kind() == reflect.Slice
 
@@ -497,14 +499,14 @@ func defineObject(v interface{}) Object {
 
 	if t.Kind() != reflect.Struct {
 		p := inspect(t, "")
-		nameTokens := strings.Split(p.GoType.String(), ".")
 		return Object{
-			IsArray:  isArray,
-			GoType:   t,
-			Type:     p.Type,
-			Format:   p.Format,
-			Name:     nameTokens[len(nameTokens)-1],
-			Required: required,
+			IsArray:              isArray,
+			GoType:               t,
+			Type:                 p.Type,
+			Format:               p.Format,
+			Name:                 objectName,
+			Required:             required,
+			AdditionalProperties: t.Kind() == reflect.Map,
 		}
 	}
 
@@ -572,7 +574,7 @@ func defineObject(v interface{}) Object {
 		IsArray:    isArray,
 		GoType:     t,
 		Type:       "object",
-		Name:       makeName(t),
+		Name:       objectName,
 		Required:   required,
 		Properties: properties,
 	}

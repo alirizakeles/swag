@@ -124,13 +124,23 @@ func TestNotStructDefine(t *testing.T) {
 	assert.Equal(t, "int32", obj.Format)
 
 	v = define([]byte{1, 2})
-	obj, ok = v["uint8"]
+	obj, ok = v["arr_uint8"]
 	if !assert.True(t, ok) {
 		fmt.Printf("%v", v)
 	}
 	assert.True(t, obj.IsArray)
 	assert.Equal(t, "integer", obj.Type)
 	assert.Equal(t, "int32", obj.Format)
+
+	v = define(map[string]string{"foo": "bar"})
+	obj, ok = v["map_string_to_string"]
+	if !assert.True(t, ok) {
+		fmt.Printf("%v", v)
+	}
+	assert.False(t, obj.IsArray)
+	assert.Equal(t, "object", obj.Type)
+	assert.Equal(t, "", obj.Format)
+	assert.True(t, obj.AdditionalProperties)
 }
 
 func TestHonorJsonIgnore(t *testing.T) {
