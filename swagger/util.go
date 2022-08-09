@@ -31,14 +31,19 @@ func makeRef(name string) string {
 type reflectType interface {
 	PkgPath() string
 	Name() string
+	String() string
 }
 
 func makeName(t reflectType) string {
-	var name string
-	if UsePackageName {
-		name = filepath.Base(t.PkgPath()) + t.Name()
-	} else {
-		name = filepath.Base(t.Name())
+	name := t.Name()
+	if name != "" && t.PkgPath() != "" && UsePackageName {
+		name = filepath.Base(t.PkgPath()) + name
+	} else if name == "" {
+		name = t.String()
+		name = strings.ReplaceAll(name, "[]", "arr_")
+		name = strings.ReplaceAll(name, "*", "ptr_")
+		name = strings.ReplaceAll(name, "[", "_")
+		name = strings.ReplaceAll(name, "]", "_to_")
 	}
 	return strings.Replace(name, "-", "_", -1)
 }

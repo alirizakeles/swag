@@ -23,6 +23,7 @@ import (
 type Mock struct {
 	name string
 	pkg  string
+	str  string
 }
 
 func (m Mock) PkgPath() string {
@@ -33,10 +34,33 @@ func (m Mock) Name() string {
 	return m.name
 }
 
+func (m Mock) String() string {
+	return m.str
+}
+
 func TestMakeSchema(t *testing.T) {
+	UsePackageName = true
 	name := makeName(Mock{
 		name: "Name",
 		pkg:  "with-some-dashes",
 	})
 	assert.Equal(t, "with_some_dashesName", name)
+
+	name = makeName(Mock{
+		str: "string",
+	})
+	assert.Equal(t, "string", name)
+
+	UsePackageName = false
+
+	name = makeName(Mock{
+		name: "Name",
+		pkg:  "with-some-dashes",
+	})
+	assert.Equal(t, "Name", name)
+
+	name = makeName(Mock{
+		str: "string",
+	})
+	assert.Equal(t, "string", name)
 }
