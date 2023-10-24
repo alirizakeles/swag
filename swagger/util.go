@@ -17,6 +17,7 @@ package swagger
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 )
@@ -25,7 +26,7 @@ import (
 var UsePackageName = false
 
 func makeRef(name string) string {
-	return fmt.Sprintf("#/definitions/%v", name)
+	return fmt.Sprintf("#/definitions/%v", url.QueryEscape(name))
 }
 
 type reflectType interface {
