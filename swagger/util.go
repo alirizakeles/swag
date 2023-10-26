@@ -24,11 +24,12 @@ import (
 
 // UsePackageName can be set to true to add package prefix of generated definition names
 var UsePackageName = false
+var StripPackagePrefixes []string
 
-const GenericTypeRegex = `(?P<type>[a-zA-Z0-9_\.\-\/]*)\[(?P<subtype>[a-zA-Z0-9_\.\-\/]*)\]`
+var genericTypeRegex = regexp.MustCompile(`(?P<type>[a-zA-Z0-9_\.\-\/]*)\[(?P<typeParams>([a-zA-Z0-9_\.\-\/]+(, ?)?)+)\]`)
 
 func makeRef(name string) string {
-	return fmt.Sprintf("#/definitions/%v", url.QueryEscape(name))
+	return fmt.Sprintf("#/definitions/%s", url.QueryEscape(name))
 }
 
 type reflectType interface {
@@ -40,29 +41,107 @@ type reflectType interface {
 func makeName(t reflectType) string {
 	name := t.Name()
 
-	genericTypeNames := getGenericTypeNames(name)
-	if len(genericTypeNames) == 3 {
-		// remove global package name from subtype and drop leading dot if exists
-		// so for example we convert subtype to a local type
-		// GetResponse[github.com/some-org-name/repository/package.Pet] => GetResponse[Pet]
-		genericName := genericTypeNames[1]
-		subtypeName := strings.TrimPrefix(strings.ReplaceAll(genericTypeNames[2], t.PkgPath(), ""), ".")
-		name = fmt.Sprintf("%s[%s]", genericName, subtypeName)
+	matches := genericTypeRegex.FindStringSubmatch(name)
+	if len(matches) > 1 { // handle generic type names
+		return handleGenericTypeNames(matches, t.PkgPath())
 	}
 
-	if name != "" && t.PkgPath() != "" && UsePackageName {
-		name = filepath.Base(t.PkgPath()) + name
-	} else if name == "" {
+	if name != "" {
+		name = prefixPackageName(name, t.PkgPath())
+	} else {
 		name = t.String()
 		name = strings.ReplaceAll(name, "[]", "arr_")
 		name = strings.ReplaceAll(name, "*", "ptr_")
 		name = strings.ReplaceAll(name, "[", "_")
 		name = strings.ReplaceAll(name, "]", "_to_")
 	}
+	return formatName(name)
+}
+
+// handleGenericTypeNames generates shorter Generic types
+// types.A[types.B, types.C] => A[B,C]
+func handleGenericTypeNames(matches []string, packageName string) string {
+	var genericName, typeParamNames string
+
+	typeIndex := genericTypeRegex.SubexpIndex("type")
+	if typeIndex > -1 {
+		genericName = prefixPackageName(matches[typeIndex], packageName)
+		genericName = formatName(genericName)
+	}
+
+	paramIndex := genericTypeRegex.SubexpIndex("typeParams")
+	if typeIndex > -1 {
+		typeParamNames = matches[paramIndex]
+	}
+
+	var cleanTypeParamNames []string
+	for _, typeParamsName := range strings.Split(typeParamNames, ",") {
+		typeParamsName = prefixPackageName(typeParamsName, packageName)
+		typeParamsName = formatName(typeParamsName)
+
+		cleanTypeParamNames = append(cleanTypeParamNames, formatName(typeParamsName))
+	}
+	return fmt.Sprintf("%s[%s]", genericName, strings.Join(cleanTypeParamNames, ", "))
+}
+
+// Given
+//
+//	StripPackagePrefixes = []string{"gitlab.com/some-ORG/"}
+//
+// Then
+//
+//	gitlab.com/some-ORG/repo-name/types.A => repo_name/types_A
+//	gitlab.com/other-ORG/repo-name/types.A => gitlab_com/other_ORG/repo_name/types_A
+func formatName(name string) string {
+	name = strings.TrimSpace(name)
+	for _, strip := range StripPackagePrefixes {
+		name = strings.TrimPrefix(name, strip)
+	}
+	name = strings.Replace(name, ".", "_", -1)
 	return strings.Replace(name, "-", "_", -1)
 }
 
-func getGenericTypeNames(name string) []string {
-	r := regexp.MustCompile(GenericTypeRegex)
-	return r.FindStringSubmatch(name)
+// Given
+//
+//	packageName = types
+//	UsePackageName = false
+//
+// Then
+//
+//	types.Pet => Pet
+//	Pet => Pet
+//	other.Pet => other.Pet
+//
+// Given
+//
+//	UsePackageName true
+//
+// Then
+//
+//	types.Pet => types.Pet
+//	Pet => types.Pet
+//	other.Pet => other.Pet
+func prefixPackageName(name, packageName string) string {
+	name = strings.TrimSpace(name)
+	basename := filepath.Base(name)
+	alreadyHasPrefix := strings.HasPrefix(name, packageName)
+	plainType := basename == name
+
+	if !UsePackageName {
+		if !alreadyHasPrefix && !plainType {
+			return name
+		}
+		ss := strings.Split(basename, ".")
+		return ss[len(ss)-1]
+	}
+
+	if alreadyHasPrefix {
+		return name
+	}
+
+	if packageName != "" && plainType {
+		name = packageName + "." + name
+	}
+
+	return name
 }

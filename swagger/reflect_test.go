@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 package swagger
 
 import (
@@ -56,6 +55,7 @@ type APIResponse struct {
 }
 
 func TestDefine(t *testing.T) {
+	StripPackagePrefixes = []string{"github.com/miketonks/swag/"}
 	UsePackageName = false
 	v1 := define(Pet{})
 	_, ok1 := v1["Pet"]
@@ -63,7 +63,7 @@ func TestDefine(t *testing.T) {
 
 	UsePackageName = true
 	v := define(Pet{})
-	obj, ok := v["swaggerPet"]
+	obj, ok := v["swagger_Pet"]
 	assert.True(t, ok)
 	assert.False(t, obj.IsArray)
 	assert.Equal(t, 11, len(obj.Properties))
@@ -73,7 +73,7 @@ func TestDefine(t *testing.T) {
 	assert.Nil(t, err)
 	err = json.NewDecoder(bytes.NewReader(data)).Decode(&content)
 	assert.Nil(t, err)
-	expected := content["swaggerPet"]
+	expected := content["swagger_Pet"]
 
 	assert.Equal(t, expected.IsArray, obj.IsArray, "expected IsArray to match")
 	assert.Equal(t, expected.Type, obj.Type, "expected Type to match")
@@ -144,20 +144,22 @@ func TestNotStructDefine(t *testing.T) {
 }
 
 func TestHonorJsonIgnore(t *testing.T) {
+	UsePackageName = false
 	v := define(Empty{})
-	obj, ok := v["swaggerEmpty"]
+	obj, ok := v["Empty"]
 	assert.True(t, ok)
 	assert.False(t, obj.IsArray)
 	assert.Equal(t, 0, len(obj.Properties), "expected zero exposed properties")
 }
 
 func TestIgnoreUnexported(t *testing.T) {
+	UsePackageName = true
 	type Test struct {
 		Exported   string
 		unexported string
 	}
 	v := define(Test{})
-	obj, ok := v["swaggerTest"]
+	obj, ok := v["swagger_Test"]
 	assert.True(t, ok)
 	assert.Equal(t, 1, len(obj.Properties), "expected one exposed properties")
 	assert.Contains(t, obj.Properties, "Exported")

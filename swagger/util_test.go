@@ -11,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 package swagger
 
 import (
@@ -39,28 +38,87 @@ func (m Mock) String() string {
 }
 
 func TestMakeSchema(t *testing.T) {
-	UsePackageName = true
-	name := makeName(Mock{
-		name: "Name",
-		pkg:  "with-some-dashes",
-	})
-	assert.Equal(t, "with_some_dashesName", name)
+	for _, tc := range []struct {
+		name                    string
+		pkg                     string
+		stripPrefixes           []string
+		expectedName            string
+		expectedNameWithPackage string
+	}{
+		{
+			"Pet",
+			"package-name",
+			[]string{},
+			"Pet",
+			"package_name_Pet",
+		},
+		{
+			"Pet",
+			"",
+			[]string{},
+			"Pet",
+			"Pet",
+		},
+		{
+			"Pet",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{},
+			"Pet",
+			"gitlab_com/some_ORG/repo_name/types_Pet",
+		},
+		{
+			"Pet",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
+			"Pet",
+			"repo_name/types_Pet",
+		},
+		{
+			"Pet",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-other-ORG/"},
+			"Pet",
+			"gitlab_com/some_ORG/repo_name/types_Pet",
+		},
+		{
+			"Pet[A]",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
+			"Pet[A]",
+			"repo_name/types_Pet[repo_name/types_A]",
+		},
+		{
+			"Pet[A, B]",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
+			"Pet[A, B]",
+			"repo_name/types_Pet[repo_name/types_A, repo_name/types_B]",
+		},
+		{
+			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-other-ORG/repo-name/types.B]",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
+			"Pet[other_repo_name/types_A, repo_name/types_B]", // both not local types, one from other repo, one from other ORG
+			"repo_name/types_Pet[other_repo_name/types_A, repo_name/types_B]",
+		},
+		{
+			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-ORG/repo-name/types.B]",
+			"gitlab.com/some-ORG/repo-name/types",
+			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
+			"Pet[other_repo_name/types_A, B]", // second is local
+			"repo_name/types_Pet[other_repo_name/types_A, repo_name/types_B]",
+		},
+	} {
+		StripPackagePrefixes = tc.stripPrefixes
+		var name string
 
-	name = makeName(Mock{
-		str: "string",
-	})
-	assert.Equal(t, "string", name)
+		UsePackageName = false
+		name = makeName(Mock{name: tc.name, pkg: tc.pkg})
+		assert.Equal(t, tc.expectedName, name)
 
-	UsePackageName = false
+		UsePackageName = true
+		name = makeName(Mock{name: tc.name, pkg: tc.pkg})
+		assert.Equal(t, tc.expectedNameWithPackage, name)
+	}
 
-	name = makeName(Mock{
-		name: "Name",
-		pkg:  "with-some-dashes",
-	})
-	assert.Equal(t, "Name", name)
-
-	name = makeName(Mock{
-		str: "string",
-	})
-	assert.Equal(t, "string", name)
 }
