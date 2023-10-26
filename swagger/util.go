@@ -24,6 +24,9 @@ import (
 
 // UsePackageName can be set to true to add package prefix of generated definition names
 var UsePackageName = false
+
+// StripPackagePrefixes can be set to remove leading strings from long package names, eg github.com/some-ORG/
+// So github.com/some-ORG/repo/types.Pet becomes repo/types.Pet
 var StripPackagePrefixes []string
 
 var genericTypeRegex = regexp.MustCompile(`(?P<type>[a-zA-Z0-9_\.\-\/]*)\[(?P<typeParams>([a-zA-Z0-9_\.\-\/]+(, ?)?)+)\]`)
