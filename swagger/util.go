@@ -29,7 +29,7 @@ var UsePackageName = false
 // So github.com/some-ORG/repo/types.Pet becomes repo/types.Pet
 var StripPackagePrefixes []string
 
-var genericTypeRegex = regexp.MustCompile(`(?P<type>[a-zA-Z0-9_\.\-\/]*)\[(?P<typeParams>([a-zA-Z0-9_\.\-\/]+(, ?)?)+)\]`)
+var genericTypeRegex = regexp.MustCompile(`(?P<type>[\w.\-/]+)\[(?P<typeParams>[\w.\-/,\s]+)\]`)
 
 func makeRef(name string) string {
 	return fmt.Sprintf("#/definitions/%s", url.QueryEscape(name))
