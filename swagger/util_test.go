@@ -40,6 +40,7 @@ func (m Mock) String() string {
 func TestMakeSchema(t *testing.T) {
 	for _, tc := range []struct {
 		name                    string
+		str                     string
 		pkg                     string
 		stripPrefixes           []string
 		expectedName            string
@@ -47,13 +48,31 @@ func TestMakeSchema(t *testing.T) {
 	}{
 		{
 			"Pet",
+			"",
 			"package-name",
 			[]string{},
 			"Pet",
 			"package_name_Pet",
 		},
 		{
+			"",
+			"string",
+			"",
+			[]string{},
+			"string",
+			"string",
+		},
+		{
+			"",
+			"int32",
+			"package-name",
+			[]string{},
+			"int32",
+			"int32",
+		},
+		{
 			"Pet",
+			"",
 			"",
 			[]string{},
 			"Pet",
@@ -61,6 +80,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{},
 			"Pet",
@@ -68,6 +88,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
 			"Pet",
@@ -75,6 +96,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-other-ORG/"},
 			"Pet",
@@ -82,6 +104,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet[A]",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
 			"Pet[A]",
@@ -89,6 +112,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet[A, B]",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
 			"Pet[A, B]",
@@ -96,6 +120,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-other-ORG/repo-name/types.B]",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
 			"Pet[other_repo_name/types_A, repo_name/types_B]", // both not local types, one from other repo, one from other ORG
@@ -103,6 +128,7 @@ func TestMakeSchema(t *testing.T) {
 		},
 		{
 			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-ORG/repo-name/types.B]",
+			"",
 			"gitlab.com/some-ORG/repo-name/types",
 			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
 			"Pet[other_repo_name/types_A, B]", // second is local
@@ -113,11 +139,11 @@ func TestMakeSchema(t *testing.T) {
 		var name string
 
 		UsePackageName = false
-		name = makeName(Mock{name: tc.name, pkg: tc.pkg})
+		name = makeName(Mock{name: tc.name, str: tc.str, pkg: tc.pkg})
 		assert.Equal(t, tc.expectedName, name)
 
 		UsePackageName = true
-		name = makeName(Mock{name: tc.name, pkg: tc.pkg})
+		name = makeName(Mock{name: tc.name, str: tc.str, pkg: tc.pkg})
 		assert.Equal(t, tc.expectedNameWithPackage, name)
 	}
 
