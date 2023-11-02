@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -126,6 +127,9 @@ func formatName(name string) string {
 //	other.Pet => other.Pet
 func prefixPackageName(name, packageName string) string {
 	name = strings.TrimSpace(name)
+	if isBuiltinType(name) {
+		return name
+	}
 	basename := filepath.Base(name)
 	alreadyHasPrefix := strings.HasPrefix(name, packageName)
 	plainType := basename == name
@@ -147,4 +151,13 @@ func prefixPackageName(name, packageName string) string {
 	}
 
 	return name
+}
+
+func isBuiltinType(s string) bool {
+	for k := reflect.Invalid; k <= reflect.UnsafePointer; k++ {
+		if k.String() == s {
+			return true
+		}
+	}
+	return false
 }
