@@ -14,6 +14,9 @@
 package swagger
 
 import (
+	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,137 +40,138 @@ func (m Mock) String() string {
 	return m.str
 }
 
+type G0 struct{}
+type G1[A any] struct{}
+type G2[A any, B any] struct{}
+
 func TestMakeSchema(t *testing.T) {
+
+	self := reflect.TypeOf(G0{}).PkgPath()
+	self = strings.Replace(self, ".", "_", -1)
+	self = strings.Replace(self, "/", "__", -1)
+
+	self_no_gh := strings.TrimPrefix(self, "github_com__")
+
 	for _, tc := range []struct {
-		name                    string
-		str                     string
-		pkg                     string
+		ty                      interface{}
 		stripPrefixes           []string
 		expectedName            string
 		expectedNameWithPackage string
 	}{
 		{
-			"Pet",
-			"",
-			"package-name",
+			G0{},
 			[]string{},
-			"Pet",
-			"package_name_Pet",
+			"G0",
+			self + "_G0",
 		},
 		{
-			"",
-			"string",
 			"",
 			[]string{},
 			"string",
 			"string",
 		},
 		{
-			"",
-			"int32",
-			"package-name",
+			int32(0),
 			[]string{},
 			"int32",
 			"int32",
 		},
 		{
-			"Pet[string]",
-			"",
-			"",
+			G1[string]{},
 			[]string{},
-			"Pet[string]",
-			"Pet[string]",
+			"G1[string]",
+			self + "_G1[string]",
 		},
 		{
-			"Pet[string]",
-			"",
-			"package-name",
+			G1[uint64]{},
+			[]string{"github.com/"},
+			"G1[uint64]",
+			self_no_gh + "_G1[uint64]",
+		},
+		{
+			[]G0{},
 			[]string{},
-			"Pet[string]",
-			"package_name_Pet[string]",
+			"arr_G0",
+			"arr_" + self + "_G0",
 		},
 		{
-			"Pet[uint64]",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/"},
-			"Pet[uint64]",
-			"repo_name/types_Pet[uint64]",
-		},
-		{
-			"Pet",
-			"",
-			"",
+			[4]G0{G0{}, G0{}, G0{}, G0{}},
 			[]string{},
-			"Pet",
-			"Pet",
+			"arr_4_G0",
+			"arr_4_" + self + "_G0",
 		},
 		{
-			"Pet",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
+			json.RawMessage{},
 			[]string{},
-			"Pet",
-			"gitlab_com/some_ORG/repo_name/types_Pet",
+			"RawMessage",
+			"encoding__json_RawMessage",
 		},
 		{
-			"Pet",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
-			"Pet",
-			"repo_name/types_Pet",
+			[]G1[json.RawMessage]{},
+			[]string{},
+			"arr_G1[encoding__json_RawMessage]",
+			"arr_" + self + "_G1[encoding__json_RawMessage]",
 		},
 		{
-			"Pet",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-other-ORG/"},
-			"Pet",
-			"gitlab_com/some_ORG/repo_name/types_Pet",
+			[]G1[json.RawMessage]{},
+			[]string{"encoding/"},
+			"arr_G1[json_RawMessage]",
+			"arr_" + self + "_G1[json_RawMessage]",
 		},
 		{
-			"Pet[A]",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
-			"Pet[A]",
-			"repo_name/types_Pet[repo_name/types_A]",
+			[]json.RawMessage{},
+			[]string{},
+			"arr_RawMessage",
+			"arr_encoding__json_RawMessage",
 		},
 		{
-			"Pet[A, B]",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
-			"Pet[A, B]",
-			"repo_name/types_Pet[repo_name/types_A, repo_name/types_B]",
+			map[G0]json.RawMessage{},
+			[]string{},
+			"map_G0_to_RawMessage",
+			"map_" + self + "_G0_to_encoding__json_RawMessage",
 		},
 		{
-			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-other-ORG/repo-name/types.B]",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
-			"Pet[other_repo_name/types_A, repo_name/types_B]", // both not local types, one from other repo, one from other ORG
-			"repo_name/types_Pet[other_repo_name/types_A, repo_name/types_B]",
+			&G0{},
+			[]string{},
+			"ptr_G0",
+			"ptr_" + self + "_G0",
 		},
 		{
-			"Pet[gitlab.com/some-ORG/other-repo-name/types.A, gitlab.com/some-ORG/repo-name/types.B]",
-			"",
-			"gitlab.com/some-ORG/repo-name/types",
-			[]string{"gitlab.com/some-ORG/", "gitlab.com/some-other-ORG/"},
-			"Pet[other_repo_name/types_A, B]", // second is local
-			"repo_name/types_Pet[other_repo_name/types_A, repo_name/types_B]",
+			G1[G0]{},
+			[]string{},
+			"G1[G0]",
+			self + "_G1[" + self + "_G0]",
+		},
+		{
+			G2[G0, G0]{},
+			[]string{},
+			"G2[G0, G0]",
+			self + "_G2[" + self + "_G0, " + self + "_G0]",
+		},
+		{
+			G1[G1[G0]]{},
+			[]string{},
+			"G1[G1[G0]]",
+			self + "_G1[" + self + "_G1[" + self + "_G0]]",
+		},
+		{
+			G1[G1[G0]]{},
+			[]string{"github.com/"},
+			"G1[G1[G0]]",
+			self_no_gh + "_G1[" + self_no_gh + "_G1[" + self_no_gh + "_G0]]",
 		},
 	} {
 		StripPackagePrefixes = tc.stripPrefixes
 		var name string
 
+		rty := reflect.TypeOf(tc.ty)
+
 		UsePackageName = false
-		name = makeName(Mock{name: tc.name, str: tc.str, pkg: tc.pkg})
+		name = makeName(rty)
 		assert.Equal(t, tc.expectedName, name)
 
 		UsePackageName = true
-		name = makeName(Mock{name: tc.name, str: tc.str, pkg: tc.pkg})
+		name = makeName(rty)
 		assert.Equal(t, tc.expectedNameWithPackage, name)
 	}
 

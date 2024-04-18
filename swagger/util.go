@@ -17,9 +17,7 @@ package swagger
 import (
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 )
 
@@ -30,10 +28,223 @@ var UsePackageName = false
 // So github.com/some-ORG/repo/types.Pet becomes repo/types.Pet
 var StripPackagePrefixes []string
 
-var genericTypeRegex = regexp.MustCompile(`(?P<type>[\w.\-/]+)\[(?P<typeParams>[\w.\-/,\s]+)\]`)
-
 func makeRef(name string) string {
 	return fmt.Sprintf("#/definitions/%s", url.QueryEscape(name))
+}
+
+type parsedType interface {
+	fmt.Stringer
+
+	// handlePackageName handles all transformations on package names.
+	//
+	// If UsePackageName is true, any non-builtin type with an empty package will be set to use `packageName`; if UsePackageName is false, the reverse transformation is applied.
+	// Any package which matches any entry in StripPackagePrefixes will have that prefix stripped.
+	// All generic arguments will be transformed recursively.
+	handlePackageName(string)
+}
+
+var _ parsedType = &parsedNamed{}
+
+type parsedNamed struct {
+	pkg     string
+	name    string
+	generic []parsedType
+}
+
+func (p parsedNamed) String() string {
+	s := p.name
+
+	if p.pkg != "" {
+		s = p.pkg + "." + s
+	}
+
+	if p.generic != nil {
+		sep := "["
+		for _, g := range p.generic {
+			s += sep + g.String()
+			sep = ", "
+		}
+		s += "]"
+	}
+
+	return s
+}
+func (ty parsedNamed) isBuiltin() bool {
+	for k := reflect.Invalid; k <= reflect.UnsafePointer; k++ {
+		if k.String() == ty.name {
+			return true
+		}
+	}
+	return false
+}
+func (ty *parsedNamed) handlePackageName(packageName string) {
+	if UsePackageName {
+		if ty.pkg == "" && !ty.isBuiltin() {
+			ty.pkg = packageName
+		}
+	} else {
+		if ty.pkg == packageName {
+			ty.pkg = ""
+		}
+	}
+
+	for _, pfx := range StripPackagePrefixes {
+		if strings.HasPrefix(ty.pkg, pfx) {
+			ty.pkg = strings.TrimPrefix(ty.pkg, pfx)
+			break
+		}
+	}
+
+	for _, g := range ty.generic {
+		g.handlePackageName(packageName)
+	}
+}
+
+var _ parsedType = &parsedMap{}
+
+type parsedMap struct {
+	key   parsedType
+	value parsedType
+}
+
+func (ty parsedMap) String() string {
+	return fmt.Sprintf("map_%s_to_%s", ty.key, ty.value)
+}
+func (ty *parsedMap) handlePackageName(packageName string) {
+	ty.key.handlePackageName(packageName)
+	ty.value.handlePackageName(packageName)
+}
+
+var _ parsedType = &parsedSlice{}
+
+type parsedSlice struct {
+	count string
+	elem  parsedType
+}
+
+func (ty parsedSlice) String() string {
+	if ty.count != "" {
+		return fmt.Sprintf("arr_%s_%s", ty.count, ty.elem)
+	} else {
+		return fmt.Sprintf("arr_%s", ty.elem)
+	}
+}
+func (ty *parsedSlice) handlePackageName(packageName string) {
+	ty.elem.handlePackageName(packageName)
+}
+
+func parseArrayCount(input string) (string, string) {
+	var s string
+
+	for len(input) > 0 && '0' <= input[0] && input[0] <= '9' {
+		s += string(input[0])
+		input = input[1:]
+	}
+
+	return s, input
+}
+
+var _ parsedType = &parsedPtr{}
+
+type parsedPtr struct {
+	elem parsedType
+}
+
+func (ty parsedPtr) String() string {
+	return fmt.Sprintf("ptr_%s", ty.elem)
+}
+func (ty *parsedPtr) handlePackageName(packageName string) {
+	ty.elem.handlePackageName(packageName)
+}
+
+// parseType parses a type into a parsedType.
+//
+//	Foo => parsedNamed{name: "Foo"}
+//	my.Foo => parsedNamed{pkg: "my", name: "Foo"}
+//	Foo[my.Bar] => parsedNamed{name: "Foo", generic: [parsedNamed{pkg: "my", name: "Bar"}]
+//	Foo[my.Bar[Baz]] => parsedNamed{name: "Foo", generic: [parsedNamed{pkg: "my", name: "Bar", generic: [{name: "Baz"}]}]
+//	[]Foo => parsedSlice{ty: {name: "Foo"}}
+//	map[Foo]Bar => parsedMap{key: {name: "Foo"}, value: {name: "Bar"}}
+func parseType(s string) (parsedType, string) {
+	pkg := ""
+	name := ""
+	var generic []parsedType
+
+	if strings.HasPrefix(s, "map[") {
+		key, rest := parseType(s[4:])
+		if rest[0] != ']' {
+			panic(fmt.Sprintf("failed to parse type %q: bad map", s))
+		}
+		value, rest := parseType(rest[1:])
+
+		return &parsedMap{
+			key:   key,
+			value: value,
+		}, rest
+	}
+
+	if strings.HasPrefix(s, "[") {
+		count, rest := parseArrayCount(s[1:])
+		if rest[0] != ']' {
+			panic(fmt.Sprintf("failed to parse type %q: bad array/slice", s))
+		}
+
+		elem, rest := parseType(rest[1:])
+		return &parsedSlice{
+			count: count,
+			elem:  elem,
+		}, rest
+	}
+
+	if strings.HasPrefix(s, "*") {
+		elem, rest := parseType(s[1:])
+		return &parsedPtr{
+			elem: elem,
+		}, rest
+	}
+
+loop:
+	for len(s) != 0 {
+		switch s[0] {
+		case '.':
+			pkg += name + "."
+			name = ""
+			s = s[1:]
+		case '/':
+			pkg += name + "/"
+			name = ""
+			s = s[1:]
+		case '[':
+			s = s[1:]
+			for len(s) != 0 {
+				this, rest := parseType(s)
+				generic = append(generic, this)
+				switch rest[0] {
+				case ',':
+					s = rest[1:]
+					if rest[1] == ' ' {
+						s = rest[2:]
+					}
+				case ']':
+					s = rest[1:]
+					break loop
+				}
+			}
+		case ',', ']':
+			break loop
+		default:
+			name += string(s[0])
+			s = s[1:]
+		}
+	}
+
+	pkg = strings.TrimSuffix(pkg, ".")
+
+	return &parsedNamed{
+		pkg:     pkg,
+		name:    name,
+		generic: generic,
+	}, s
 }
 
 type reflectType interface {
@@ -42,122 +253,52 @@ type reflectType interface {
 	String() string
 }
 
-func makeName(t reflectType) string {
-	name := t.Name()
+func makeName(t reflect.Type) string {
+	ty := reflectParseType(t)
+	name := ty.String()
 
-	matches := genericTypeRegex.FindStringSubmatch(name)
-	if len(matches) > 1 { // handle generic type names
-		return handleGenericTypeNames(matches, t.PkgPath())
-	}
-
-	if name != "" {
-		name = prefixPackageName(name, t.PkgPath())
-	} else {
-		name = t.String()
-		name = strings.ReplaceAll(name, "[]", "arr_")
-		name = strings.ReplaceAll(name, "*", "ptr_")
-		name = strings.ReplaceAll(name, "[", "_")
-		name = strings.ReplaceAll(name, "]", "_to_")
-	}
-	return formatName(name)
-}
-
-// handleGenericTypeNames generates shorter Generic types
-// types.A[types.B, types.C] => A[B,C]
-func handleGenericTypeNames(matches []string, packageName string) string {
-	var genericName, typeParamNames string
-
-	typeIndex := genericTypeRegex.SubexpIndex("type")
-	if typeIndex > -1 {
-		genericName = prefixPackageName(matches[typeIndex], packageName)
-		genericName = formatName(genericName)
-	}
-
-	paramIndex := genericTypeRegex.SubexpIndex("typeParams")
-	if typeIndex > -1 {
-		typeParamNames = matches[paramIndex]
-	}
-
-	var cleanTypeParamNames []string
-	for _, typeParamsName := range strings.Split(typeParamNames, ",") {
-		typeParamsName = prefixPackageName(typeParamsName, packageName)
-		typeParamsName = formatName(typeParamsName)
-
-		cleanTypeParamNames = append(cleanTypeParamNames, formatName(typeParamsName))
-	}
-	return fmt.Sprintf("%s[%s]", genericName, strings.Join(cleanTypeParamNames, ", "))
-}
-
-// Given
-//
-//	StripPackagePrefixes = []string{"gitlab.com/some-ORG/"}
-//
-// Then
-//
-//	gitlab.com/some-ORG/repo-name/types.A => repo_name/types_A
-//	gitlab.com/other-ORG/repo-name/types.A => gitlab_com/other_ORG/repo_name/types_A
-func formatName(name string) string {
 	name = strings.TrimSpace(name)
-	for _, strip := range StripPackagePrefixes {
-		name = strings.TrimPrefix(name, strip)
-	}
 	name = strings.Replace(name, ".", "_", -1)
-	return strings.Replace(name, "-", "_", -1)
-}
-
-// Given
-//
-//	packageName = types
-//	UsePackageName = false
-//
-// Then
-//
-//	types.Pet => Pet
-//	Pet => Pet
-//	other.Pet => other.Pet
-//
-// Given
-//
-//	UsePackageName true
-//
-// Then
-//
-//	types.Pet => types.Pet
-//	Pet => types.Pet
-//	other.Pet => other.Pet
-func prefixPackageName(name, packageName string) string {
-	name = strings.TrimSpace(name)
-	if isBuiltinType(name) {
-		return name
-	}
-	basename := filepath.Base(name)
-	alreadyHasPrefix := strings.HasPrefix(name, packageName)
-	plainType := basename == name
-
-	if !UsePackageName {
-		if !alreadyHasPrefix && !plainType {
-			return name
-		}
-		ss := strings.Split(basename, ".")
-		return ss[len(ss)-1]
-	}
-
-	if alreadyHasPrefix {
-		return name
-	}
-
-	if packageName != "" && plainType {
-		name = packageName + "." + name
-	}
+	name = strings.Replace(name, "-", "_", -1)
+	name = strings.Replace(name, "/", "__", -1) // slashes are problematic due to the name ending up in the fragment of a URL parse
 
 	return name
 }
 
-func isBuiltinType(s string) bool {
-	for k := reflect.Invalid; k <= reflect.UnsafePointer; k++ {
-		if k.String() == s {
-			return true
+func reflectParseType(t reflect.Type) parsedType {
+	if t.Name() != "" {
+		p, rest := parseType(t.Name())
+		if rest != "" {
+			panic(fmt.Sprintf("failed to parse type %q, rest=%q", t.Name(), rest))
 		}
+		p.handlePackageName(t.PkgPath())
+		return p
 	}
-	return false
+	switch t.Kind() {
+	case reflect.Array:
+		return &parsedSlice{
+			count: fmt.Sprintf("%d", t.Len()),
+			elem:  reflectParseType(t.Elem()),
+		}
+	case reflect.Slice:
+		return &parsedSlice{
+			elem: reflectParseType(t.Elem()),
+		}
+	case reflect.Map:
+		return &parsedMap{
+			key:   reflectParseType(t.Key()),
+			value: reflectParseType(t.Elem()),
+		}
+	case reflect.Ptr:
+		return &parsedPtr{
+			elem: reflectParseType(t.Elem()),
+		}
+	default:
+		// hopefully only builtins make it here; if we have to call `t.String()`, we don't get full package information
+		p, rest := parseType(t.String())
+		if rest != "" {
+			panic(fmt.Sprintf("failed to parse type %q, rest=%q", t.String(), rest))
+		}
+		return p
+	}
 }
